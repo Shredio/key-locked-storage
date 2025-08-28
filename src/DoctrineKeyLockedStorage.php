@@ -214,7 +214,14 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 			->setNotnull(true);
 		$table->addColumn('val', Types::JSON)
 			->setNotnull(false);
-		$table->addPrimaryKeyConstraint(new PrimaryKeyConstraint(null, [new UnqualifiedName(Identifier::unquoted('id'))], false));
+
+		if (method_exists($table, 'addPrimaryKeyConstraint')) { // @phpstan-ignore function.alreadyNarrowedType
+			$table->addPrimaryKeyConstraint(
+				new PrimaryKeyConstraint(null, [new UnqualifiedName(Identifier::unquoted('id'))], false)
+			);
+		} else {
+			$table->setPrimaryKey(['id']);
+		}
 
 		$platform = $this->connection->getDatabasePlatform();
 
