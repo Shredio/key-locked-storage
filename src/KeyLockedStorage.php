@@ -13,6 +13,11 @@ interface KeyLockedStorage
 	public function run(string $key, callable $callback): mixed;
 
 	/**
+	 * Returns the value for the given key (without a lock)
+	 */
+	public function get(string $key): mixed;
+
+	/**
 	 * Adds one or more elements to the end of an array
 	 * @param list<mixed> $values
 	 * @return list<mixed>

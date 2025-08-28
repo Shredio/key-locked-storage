@@ -19,6 +19,15 @@ final class InMemoryKeyLockedStorage implements KeyLockedStorage
 		});
 	}
 
+	public function get(string $key): mixed
+	{
+		if (strlen($key) > 120) {
+			throw new LogicException(sprintf('Key length %d exceeds maximum length of 120 characters', strlen($key)));
+		}
+
+		return $this->storage[$key] ?? null;
+	}
+
 	/**
 	 * @template TValue
 	 * @param callable(TValue|null $value): KeyLockedValue<TValue> $callback

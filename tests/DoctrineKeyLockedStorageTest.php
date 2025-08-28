@@ -3,6 +3,7 @@
 namespace Tests;
 
 use Doctrine\DBAL\Connection;
+use LogicException;
 use RuntimeException;
 use Shredio\KeyLockedStorage\DoctrineKeyLockedStorage;
 use Throwable;
@@ -112,6 +113,31 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 		$this->assertEquals($data, $result2); // Json formats in MySQL are not guaranteed to be identical
 	}
 
+	public function testGetWithExistingKey(): void
+	{
+		$this->storage->run('test-key', fn() => ['value' => 'test']);
+		$result = $this->storage->get('test-key');
+
+		$this->assertEquals(['value' => 'test'], $result);
+	}
+
+	public function testGetWithNonExistentKey(): void
+	{
+		$result = $this->storage->get('non-existent-key');
+
+		$this->assertNull($result);
+	}
+
+	public function testGetKeyLengthValidation(): void
+	{
+		$longKey = str_repeat('a', 121);
+		
+		$this->expectException(LogicException::class);
+		$this->expectExceptionMessage('Key length 121 exceeds maximum length of 120 characters');
+
+		$this->storage->get($longKey);
+	}
+
 	public function testPushWithNewKey(): void
 	{
 		$result = $this->storage->push('array-key', 'first', 'second');
@@ -156,7 +182,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['third'], $result);
 
-		$remaining = $this->storage->run('pop-key', fn($value) => $value);
+		$remaining = $this->storage->get('pop-key');
 		$this->assertSame(['first', 'second'], $remaining);
 	}
 
@@ -167,7 +193,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['c', 'd', 'e'], $result);
 
-		$remaining = $this->storage->run('pop-multi-key', fn($value) => $value);
+		$remaining = $this->storage->get('pop-multi-key');
 		$this->assertSame(['a', 'b'], $remaining);
 	}
 
@@ -178,7 +204,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['one', 'two'], $result);
 
-		$remaining = $this->storage->run('pop-limited-key', fn($value) => $value);
+		$remaining = $this->storage->get('pop-limited-key');
 		$this->assertNull($remaining);
 	}
 
@@ -219,7 +245,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['first'], $result);
 
-		$remaining = $this->storage->run('shift-key', fn($value) => $value);
+		$remaining = $this->storage->get('shift-key');
 		$this->assertSame(['second', 'third'], $remaining);
 	}
 
@@ -230,7 +256,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['a', 'b', 'c'], $result);
 
-		$remaining = $this->storage->run('shift-multi-key', fn($value) => $value);
+		$remaining = $this->storage->get('shift-multi-key');
 		$this->assertSame(['d', 'e'], $remaining);
 	}
 
@@ -241,38 +267,38 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['one', 'two'], $result);
 
-		$remaining = $this->storage->run('shift-limited-key', fn($value) => $value);
+		$remaining = $this->storage->get('shift-limited-key');
 		$this->assertNull($remaining);
 	}
 
 	public function testArrayOperationsSequence(): void
 	{
 		$this->storage->push('sequence-key', 'a', 'b');
-		$this->assertSame(['a', 'b'], $this->storage->run('sequence-key', fn($value) => $value));
+		$this->assertSame(['a', 'b'], $this->storage->get('sequence-key'));
 
 		$this->storage->unshift('sequence-key', 'x', 'y');
-		$this->assertSame(['x', 'y', 'a', 'b'], $this->storage->run('sequence-key', fn($value) => $value));
+		$this->assertSame(['x', 'y', 'a', 'b'], $this->storage->get('sequence-key'));
 
 		$popped = $this->storage->pop('sequence-key', 2);
 		$this->assertSame(['a', 'b'], $popped);
-		$this->assertSame(['x', 'y'], $this->storage->run('sequence-key', fn($value) => $value));
+		$this->assertSame(['x', 'y'], $this->storage->get('sequence-key'));
 
 		$shifted = $this->storage->shift('sequence-key');
 		$this->assertSame(['x'], $shifted);
-		$this->assertSame(['y'], $this->storage->run('sequence-key', fn($value) => $value));
+		$this->assertSame(['y'], $this->storage->get('sequence-key'));
 	}
 
 	public function testEmptyArrayCleanup(): void
 	{
 		$this->storage->push('cleanup-key', 'item');
-		$this->assertSame(['item'], $this->storage->run('cleanup-key', fn($value) => $value));
+		$this->assertSame(['item'], $this->storage->get('cleanup-key'));
 
 		$this->storage->pop('cleanup-key');
-		$this->assertNull($this->storage->run('cleanup-key', fn($value) => $value));
+		$this->assertNull($this->storage->get('cleanup-key'));
 
 		$this->storage->push('cleanup-key2', 'item');
 		$this->storage->shift('cleanup-key2');
-		$this->assertNull($this->storage->run('cleanup-key2', fn($value) => $value));
+		$this->assertNull($this->storage->get('cleanup-key2'));
 	}
 
 	public function testPopOrInitWithEmptyKey(): void
@@ -281,7 +307,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['c'], $result);
 		
-		$remaining = $this->storage->run('empty-key', fn($value) => $value);
+		$remaining = $this->storage->get('empty-key');
 		$this->assertSame(['a', 'b'], $remaining);
 	}
 
@@ -292,7 +318,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['z'], $result);
 		
-		$remaining = $this->storage->run('existing-key', fn($value) => $value);
+		$remaining = $this->storage->get('existing-key');
 		$this->assertSame(['x', 'y'], $remaining);
 	}
 
@@ -302,7 +328,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['c', 'd', 'e'], $result);
 		
-		$remaining = $this->storage->run('multi-key', fn($value) => $value);
+		$remaining = $this->storage->get('multi-key');
 		$this->assertSame(['a', 'b'], $remaining);
 	}
 
@@ -312,7 +338,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['a'], $result);
 		
-		$remaining = $this->storage->run('empty-shift-key', fn($value) => $value);
+		$remaining = $this->storage->get('empty-shift-key');
 		$this->assertSame(['b', 'c'], $remaining);
 	}
 
@@ -323,7 +349,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['x'], $result);
 		
-		$remaining = $this->storage->run('existing-shift-key', fn($value) => $value);
+		$remaining = $this->storage->get('existing-shift-key');
 		$this->assertSame(['y', 'z'], $remaining);
 	}
 
@@ -333,7 +359,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 
 		$this->assertSame(['a', 'b', 'c'], $result);
 		
-		$remaining = $this->storage->run('multi-shift-key', fn($value) => $value);
+		$remaining = $this->storage->get('multi-shift-key');
 		$this->assertSame(['d', 'e'], $remaining);
 	}
 
@@ -342,7 +368,7 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 		$result = $this->storage->popOrInit('empty-init-key', fn() => []);
 
 		$this->assertSame([], $result);
-		$this->assertNull($this->storage->run('empty-init-key', fn($value) => $value));
+		$this->assertNull($this->storage->get('empty-init-key'));
 	}
 
 	public function testShiftOrInitEmptyInitializer(): void
@@ -350,6 +376,6 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 		$result = $this->storage->shiftOrInit('empty-shift-init-key', fn() => []);
 
 		$this->assertSame([], $result);
-		$this->assertNull($this->storage->run('empty-shift-init-key', fn($value) => $value));
+		$this->assertNull($this->storage->get('empty-shift-init-key'));
 	}
 }

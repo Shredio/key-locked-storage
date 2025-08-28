@@ -33,6 +33,24 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 		});
 	}
 
+	public function get(string $key): mixed
+	{
+		if (strlen($key) > 120) {
+			throw new LogicException(sprintf('Key length %d exceeds maximum length of 120 characters', strlen($key)));
+		}
+
+		try {
+			return $this->getValue($key, false);
+		} catch (TableNotFoundException $exception) {
+			if ($this->autoSetup) {
+				$this->setup();
+				return $this->getValue($key, false);
+			}
+
+			throw $exception;
+		}
+	}
+
 	/**
 	 * @template TValue
 	 * @param callable(TValue|null $value): KeyLockedValue<TValue> $callback
@@ -66,7 +84,7 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 		}
 	}
 
-	private function getValue(string $key): mixed
+	private function getValue(string $key, bool $withLock = true): mixed
 	{
 		$qb = $this->connection->createQueryBuilder()
 			->select('s.val')
@@ -74,7 +92,7 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 			->where('s.id = ?')
 			->setParameters([$key], [Types::STRING]);
 		
-		if (!$this->connection->getDatabasePlatform() instanceof SQLitePlatform) {
+		if ($withLock && !$this->connection->getDatabasePlatform() instanceof SQLitePlatform) {
 			$qb->forUpdate(ConflictResolutionMode::SKIP_LOCKED);
 		}
 
