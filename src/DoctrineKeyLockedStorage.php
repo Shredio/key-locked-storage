@@ -108,7 +108,7 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 			->setParameters([$key], [Types::STRING]);
 		
 		if ($withLock && !$this->connection->getDatabasePlatform() instanceof SQLitePlatform) {
-			$qb->forUpdate(ConflictResolutionMode::SKIP_LOCKED);
+			$qb->forUpdate();
 		}
 
 		$results = $qb->fetchAllAssociative();
