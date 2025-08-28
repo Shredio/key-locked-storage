@@ -299,4 +299,102 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 		$this->assertSame('value1', $result1);
 		$this->assertSame('value2', $result2);
 	}
+
+	public function testPopOrInitWithEmptyKey(): void
+	{
+		$result = $this->storage->popOrInit('empty-key', fn() => ['a', 'b', 'c']);
+
+		$this->assertSame(['c'], $result);
+		
+		$remaining = $this->storage->run('empty-key', fn($value) => $value);
+		$this->assertSame(['a', 'b'], $remaining);
+	}
+
+	public function testPopOrInitWithExistingKey(): void
+	{
+		$this->storage->push('existing-key', 'x', 'y', 'z');
+		$result = $this->storage->popOrInit('existing-key', fn() => ['a', 'b', 'c']);
+
+		$this->assertSame(['z'], $result);
+		
+		$remaining = $this->storage->run('existing-key', fn($value) => $value);
+		$this->assertSame(['x', 'y'], $remaining);
+	}
+
+	public function testPopOrInitMultipleElements(): void
+	{
+		$result = $this->storage->popOrInit('multi-key', fn() => ['a', 'b', 'c', 'd', 'e'], 3);
+
+		$this->assertSame(['c', 'd', 'e'], $result);
+		
+		$remaining = $this->storage->run('multi-key', fn($value) => $value);
+		$this->assertSame(['a', 'b'], $remaining);
+	}
+
+	public function testShiftOrInitWithEmptyKey(): void
+	{
+		$result = $this->storage->shiftOrInit('empty-shift-key', fn() => ['a', 'b', 'c']);
+
+		$this->assertSame(['a'], $result);
+		
+		$remaining = $this->storage->run('empty-shift-key', fn($value) => $value);
+		$this->assertSame(['b', 'c'], $remaining);
+	}
+
+	public function testShiftOrInitWithExistingKey(): void
+	{
+		$this->storage->push('existing-shift-key', 'x', 'y', 'z');
+		$result = $this->storage->shiftOrInit('existing-shift-key', fn() => ['a', 'b', 'c']);
+
+		$this->assertSame(['x'], $result);
+		
+		$remaining = $this->storage->run('existing-shift-key', fn($value) => $value);
+		$this->assertSame(['y', 'z'], $remaining);
+	}
+
+	public function testShiftOrInitMultipleElements(): void
+	{
+		$result = $this->storage->shiftOrInit('multi-shift-key', fn() => ['a', 'b', 'c', 'd', 'e'], 3);
+
+		$this->assertSame(['a', 'b', 'c'], $result);
+		
+		$remaining = $this->storage->run('multi-shift-key', fn($value) => $value);
+		$this->assertSame(['d', 'e'], $remaining);
+	}
+
+	public function testPopOrInitEmptyInitializer(): void
+	{
+		$result = $this->storage->popOrInit('empty-init-key', fn() => []);
+
+		$this->assertSame([], $result);
+		$this->assertNull($this->storage->run('empty-init-key', fn($value) => $value));
+	}
+
+	public function testShiftOrInitEmptyInitializer(): void
+	{
+		$result = $this->storage->shiftOrInit('empty-shift-init-key', fn() => []);
+
+		$this->assertSame([], $result);
+		$this->assertNull($this->storage->run('empty-shift-init-key', fn($value) => $value));
+	}
+
+	public function testPopOrInitKeyLengthValidation(): void
+	{
+		$longKey = str_repeat('a', 121);
+		
+		$this->expectException(LogicException::class);
+		$this->expectExceptionMessage('Key length 121 exceeds maximum length of 120 characters');
+
+		$this->storage->popOrInit($longKey, fn() => ['test']);
+	}
+
+	public function testShiftOrInitKeyLengthValidation(): void
+	{
+		$longKey = str_repeat('a', 121);
+		
+		$this->expectException(LogicException::class);
+		$this->expectExceptionMessage('Key length 121 exceeds maximum length of 120 characters');
+
+		$this->storage->shiftOrInit($longKey, fn() => ['test']);
+	}
 }

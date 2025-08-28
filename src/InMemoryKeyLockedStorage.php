@@ -101,4 +101,40 @@ final class InMemoryKeyLockedStorage implements KeyLockedStorage
 		});
 	}
 
+	public function popOrInit(string $key, callable $initializer, int $count = 1): array
+	{
+		return $this->execute($key, function (mixed $current) use ($initializer, $count): KeyLockedValue {
+			$array = $this->ensureList($current);
+			
+			if ($array === []) {
+				$array = $initializer();
+			}
+			
+			$popped = array_splice($array, -$count);
+
+			return new KeyLockedValue(
+				valueToSet: $array === [] ? null : $array,
+				valueToReturn: $popped,
+			);
+		});
+	}
+
+	public function shiftOrInit(string $key, callable $initializer, int $count = 1): array
+	{
+		return $this->execute($key, function (mixed $current) use ($initializer, $count): KeyLockedValue {
+			$array = $this->ensureList($current);
+			
+			if ($array === []) {
+				$array = $initializer();
+			}
+			
+			$shifted = array_splice($array, 0, $count);
+
+			return new KeyLockedValue(
+				valueToSet: $array === [] ? null : $array,
+				valueToReturn: $shifted,
+			);
+		});
+	}
+
 }

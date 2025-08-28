@@ -153,7 +153,7 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 
 	public function pop(string $key, int $count = 1): array
 	{
-		return $this->execute($key, function (mixed $current) use (&$popped, $count): KeyLockedValue {
+		return $this->execute($key, function (mixed $current) use ($count): KeyLockedValue {
 			$array = $this->ensureList($current);
 			$popped = array_splice($array, -$count);
 
@@ -205,6 +205,42 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 		}
 
 		$this->autoSetup = false;
+	}
+
+	public function popOrInit(string $key, callable $initializer, int $count = 1): array
+	{
+		return $this->execute($key, function (mixed $current) use ($initializer, $count): KeyLockedValue {
+			$array = $this->ensureList($current);
+			
+			if ($array === []) {
+				$array = $initializer();
+			}
+			
+			$popped = array_splice($array, -$count);
+
+			return new KeyLockedValue(
+				valueToSet: $array === [] ? null : $array,
+				valueToReturn: $popped,
+			);
+		});
+	}
+
+	public function shiftOrInit(string $key, callable $initializer, int $count = 1): array
+	{
+		return $this->execute($key, function (mixed $current) use ($initializer, $count): KeyLockedValue {
+			$array = $this->ensureList($current);
+			
+			if ($array === []) {
+				$array = $initializer();
+			}
+			
+			$shifted = array_splice($array, 0, $count);
+
+			return new KeyLockedValue(
+				valueToSet: $array === [] ? null : $array,
+				valueToReturn: $shifted,
+			);
+		});
 	}
 
 }

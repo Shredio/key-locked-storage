@@ -40,4 +40,22 @@ interface KeyLockedStorage
 	 */
 	public function shift(string $key, int $count = 1): array;
 
+	/**
+	 * Removes and returns elements from the end of an array, initializing with callback if empty
+	 * @template T
+	 * @param callable(): list<T> $initializer
+	 * @param int<1, max> $count
+	 * @return list<T>
+	 */
+	public function popOrInit(string $key, callable $initializer, int $count = 1): array;
+
+	/**
+	 * Removes and returns elements from the beginning of an array, initializing with callback if empty
+	 * @template T
+	 * @param callable(): list<T> $initializer
+	 * @param int<1, max> $count
+	 * @return list<T>
+	 */
+	public function shiftOrInit(string $key, callable $initializer, int $count = 1): array;
+
 }
