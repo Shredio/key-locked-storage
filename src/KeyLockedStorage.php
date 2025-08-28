@@ -2,65 +2,33 @@
 
 namespace Shredio\KeyLockedStorage;
 
+use Shredio\KeyLockedStorage\Value\LockedList;
+use Shredio\KeyLockedStorage\Value\LockedValue;
+
 interface KeyLockedStorage
 {
 
 	/**
 	 * @template T
-	 * @param callable(T|null): T $callback
-	 * @return T
+	 * @template TRet
+	 * @param callable(): T $initializer
+	 * @param callable(LockedValue<T> $value): TRet $processor
+	 * @return TRet
 	 */
-	public function run(string $key, callable $callback): mixed;
+	public function value(string $key, callable $initializer, callable $processor): mixed;
+
+	/**
+	 * @template T
+	 * @template TRet
+	 * @param callable(): list<T> $initializer
+	 * @param callable(LockedList<T> $list): TRet $processor
+	 * @return TRet
+	 */
+	public function list(string $key, callable $initializer, callable $processor): mixed;
 
 	/**
 	 * Returns the value for the given key (without a lock)
 	 */
 	public function get(string $key): mixed;
-
-	/**
-	 * Adds one or more elements to the end of an array
-	 * @param list<mixed> $values
-	 * @return list<mixed>
-	 */
-	public function push(string $key, mixed ...$values): array;
-
-	/**
-	 * Removes and returns elements from the end of an array
-	 * @param int<1, max> $count
-	 * @return list<mixed>
-	 */
-	public function pop(string $key, int $count = 1): array;
-
-	/**
-	 * Adds one or more elements to the beginning of an array
-	 * @param list<mixed> $values
-	 * @return list<mixed>
-	 */
-	public function unshift(string $key, mixed ...$values): array;
-
-	/**
-	 * Removes and returns elements from the beginning of an array
-	 * @param int<1, max> $count
-	 * @return list<mixed>
-	 */
-	public function shift(string $key, int $count = 1): array;
-
-	/**
-	 * Removes and returns elements from the end of an array, initializing with callback if empty
-	 * @template T
-	 * @param callable(): list<T> $initializer
-	 * @param int<1, max> $count
-	 * @return list<T>
-	 */
-	public function popOrInit(string $key, callable $initializer, int $count = 1): array;
-
-	/**
-	 * Removes and returns elements from the beginning of an array, initializing with callback if empty
-	 * @template T
-	 * @param callable(): list<T> $initializer
-	 * @param int<1, max> $count
-	 * @return list<T>
-	 */
-	public function shiftOrInit(string $key, callable $initializer, int $count = 1): array;
 
 }

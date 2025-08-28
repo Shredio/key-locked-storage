@@ -33,8 +33,9 @@ final class MySQLSpecificTest extends TestCase
 
 		// Create storage for default table
 		$storage = new DoctrineKeyLockedStorage($this->connection, 'key_locked_storage');
-		$storage->run('some-key', function ($value) {
-			return ['data' => 'test'];
+		$storage->value('some-key', fn() => ['data' => 'test'], function($value) {
+			$value->set(['data' => 'test']);
+			return $value->get();
 		});
 		
 		// Verify both tables exist

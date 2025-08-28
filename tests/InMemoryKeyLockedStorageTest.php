@@ -5,6 +5,8 @@ namespace Tests;
 use LogicException;
 use RuntimeException;
 use Shredio\KeyLockedStorage\InMemoryKeyLockedStorage;
+use Shredio\KeyLockedStorage\Value\LockedList;
+use Shredio\KeyLockedStorage\Value\LockedValue;
 
 final class InMemoryKeyLockedStorageTest extends TestCase
 {
@@ -19,9 +21,9 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 
 	public function testProcessWithNewKey(): void
 	{
-		$result = $this->storage->run('test-key', function ($value) {
-			$this->assertNull($value);
-			return ['counter' => 1];
+		$result = $this->storage->value('test-key', fn() => ['counter' => 1], function ($value) {
+			$value->set(['counter' => 1]);
+			return $value->get();
 		});
 
 		$this->assertSame(['counter' => 1], $result);
@@ -30,14 +32,16 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 	public function testProcessWithExistingKey(): void
 	{
 		// First process to create initial value
-		$this->storage->run('test-key', function ($value) {
-			return ['counter' => 1];
+		$this->storage->value('test-key', fn() => ['counter' => 1], function ($value) {
+			$value->set(['counter' => 1]);
+			return $value->get();
 		});
 
 		// Second process to modify existing value
-		$result = $this->storage->run('test-key', function ($value) {
-			$this->assertSame(['counter' => 1], $value);
-			return ['counter' => $value['counter'] + 1];
+		$result = $this->storage->value('test-key', fn() => ['counter' => 1], function ($value) {
+			$this->assertSame(['counter' => 1], $value->get());
+			$value->set(['counter' => $value->get()['counter'] + 1]);
+			return $value->get();
 		});
 
 		$this->assertSame(['counter' => 2], $result);
@@ -45,21 +49,23 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 
 	public function testProcessWithMultipleKeys(): void
 	{
-		$result1 = $this->storage->run('key1', function ($value) {
-			return ['value' => 'A'];
+		$result1 = $this->storage->value('key1', fn() => ['value' => 'A'], function ($value) {
+			$value->set(['value' => 'A']);
+			return $value->get();
 		});
 
-		$result2 = $this->storage->run('key2', function ($value) {
-			return ['value' => 'B'];
+		$result2 = $this->storage->value('key2', fn() => ['value' => 'B'], function ($value) {
+			$value->set(['value' => 'B']);
+			return $value->get();
 		});
 
 		$this->assertSame(['value' => 'A'], $result1);
 		$this->assertSame(['value' => 'B'], $result2);
 
 		// Verify each key maintains its own value
-		$result1Again = $this->storage->run('key1', function ($value) {
-			$this->assertSame(['value' => 'A'], $value);
-			return $value;
+		$result1Again = $this->storage->value('key1', fn() => ['value' => 'A'], function ($value) {
+			$this->assertSame(['value' => 'A'], $value->get());
+			return $value->get();
 		});
 
 		$this->assertSame(['value' => 'A'], $result1Again);
@@ -70,7 +76,7 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 		$this->expectException(RuntimeException::class);
 		$this->expectExceptionMessage('Test exception');
 
-		$this->storage->run('test-key', function ($value) {
+		$this->storage->value('test-key', fn() => ['test' => 'data'], function ($value) {
 			throw new RuntimeException('Test exception');
 		});
 	}
@@ -84,16 +90,17 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 			'object' => ['nested' => 'value']
 		];
 
-		$result = $this->storage->run('json-test', function ($value) use ($data) {
-			return $data;
+		$result = $this->storage->value('json-test', fn() => $data, function ($value) use ($data) {
+			$value->set($data);
+			return $value->get();
 		});
 
 		$this->assertSame($data, $result);
 
 		// Verify it persists correctly
-		$result2 = $this->storage->run('json-test', function ($value) use ($data) {
-			$this->assertSame($data, $value);
-			return $value;
+		$result2 = $this->storage->value('json-test', fn() => $data, function ($value) use ($data) {
+			$this->assertSame($data, $value->get());
+			return $value->get();
 		});
 
 		$this->assertSame($data, $result2);
@@ -106,8 +113,8 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 		$this->expectException(LogicException::class);
 		$this->expectExceptionMessage('Key length 121 exceeds maximum length of 120 characters');
 
-		$this->storage->run($longKey, function ($value) {
-			return 'test';
+		$this->storage->value($longKey, fn() => 'test', function (LockedValue $value) {
+			return $value->get();
 		});
 	}
 
@@ -115,174 +122,12 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 	{
 		$maxKey = str_repeat('a', 120);
 		
-		$result = $this->storage->run($maxKey, function ($value) {
-			return 'test';
+		$result = $this->storage->value($maxKey, fn() => 'test', function (LockedValue $value) {
+			$value->set('test');
+			return $value->get();
 		});
 
 		$this->assertSame('test', $result);
-	}
-
-	public function testPushWithNewKey(): void
-	{
-		$result = $this->storage->push('array-key', 'first', 'second');
-
-		$this->assertSame(['first', 'second'], $result);
-	}
-
-	public function testPushWithExistingArray(): void
-	{
-		$this->storage->push('array-key', 'first');
-		$result = $this->storage->push('array-key', 'second', 'third');
-
-		$this->assertSame(['first', 'second', 'third'], $result);
-	}
-
-	public function testPushWithExistingNonArray(): void
-	{
-		$this->storage->run('non-array-key', fn() => 'string-value');
-		$result = $this->storage->push('non-array-key', 'first', 'second');
-
-		$this->assertSame(['first', 'second'], $result);
-	}
-
-	public function testPushMultipleValues(): void
-	{
-		$result = $this->storage->push('multi-key', 1, 2, 3, 'four', ['nested']);
-
-		$this->assertSame([1, 2, 3, 'four', ['nested']], $result);
-	}
-
-	public function testPopFromNewKey(): void
-	{
-		$result = $this->storage->pop('empty-key');
-
-		$this->assertSame([], $result);
-	}
-
-	public function testPopSingleElement(): void
-	{
-		$this->storage->push('pop-key', 'first', 'second', 'third');
-		$result = $this->storage->pop('pop-key');
-
-		$this->assertSame(['third'], $result);
-
-		$remaining = $this->storage->get('pop-key');
-		$this->assertSame(['first', 'second'], $remaining);
-	}
-
-	public function testPopMultipleElements(): void
-	{
-		$this->storage->push('pop-multi-key', 'a', 'b', 'c', 'd', 'e');
-		$result = $this->storage->pop('pop-multi-key', 3);
-
-		$this->assertSame(['c', 'd', 'e'], $result);
-
-		$remaining = $this->storage->get('pop-multi-key');
-		$this->assertSame(['a', 'b'], $remaining);
-	}
-
-	public function testPopMoreThanAvailable(): void
-	{
-		$this->storage->push('pop-limited-key', 'one', 'two');
-		$result = $this->storage->pop('pop-limited-key', 5);
-
-		$this->assertSame(['one', 'two'], $result);
-
-		$remaining = $this->storage->get('pop-limited-key');
-		$this->assertNull($remaining);
-	}
-
-	public function testUnshiftWithNewKey(): void
-	{
-		$result = $this->storage->unshift('unshift-key', 'first', 'second');
-
-		$this->assertSame(['first', 'second'], $result);
-	}
-
-	public function testUnshiftWithExistingArray(): void
-	{
-		$this->storage->push('unshift-existing-key', 'third', 'fourth');
-		$result = $this->storage->unshift('unshift-existing-key', 'first', 'second');
-
-		$this->assertSame(['first', 'second', 'third', 'fourth'], $result);
-	}
-
-	public function testUnshiftWithExistingNonArray(): void
-	{
-		$this->storage->run('unshift-non-array-key', fn() => 42);
-		$result = $this->storage->unshift('unshift-non-array-key', 'first', 'second');
-
-		$this->assertSame(['first', 'second'], $result);
-	}
-
-	public function testShiftFromNewKey(): void
-	{
-		$result = $this->storage->shift('shift-empty-key');
-
-		$this->assertSame([], $result);
-	}
-
-	public function testShiftSingleElement(): void
-	{
-		$this->storage->push('shift-key', 'first', 'second', 'third');
-		$result = $this->storage->shift('shift-key');
-
-		$this->assertSame(['first'], $result);
-
-		$remaining = $this->storage->get('shift-key');
-		$this->assertSame(['second', 'third'], $remaining);
-	}
-
-	public function testShiftMultipleElements(): void
-	{
-		$this->storage->push('shift-multi-key', 'a', 'b', 'c', 'd', 'e');
-		$result = $this->storage->shift('shift-multi-key', 3);
-
-		$this->assertSame(['a', 'b', 'c'], $result);
-
-		$remaining = $this->storage->get('shift-multi-key');
-		$this->assertSame(['d', 'e'], $remaining);
-	}
-
-	public function testShiftMoreThanAvailable(): void
-	{
-		$this->storage->push('shift-limited-key', 'one', 'two');
-		$result = $this->storage->shift('shift-limited-key', 5);
-
-		$this->assertSame(['one', 'two'], $result);
-
-		$remaining = $this->storage->get('shift-limited-key');
-		$this->assertNull($remaining);
-	}
-
-	public function testArrayOperationsSequence(): void
-	{
-		$this->storage->push('sequence-key', 'a', 'b');
-		$this->assertSame(['a', 'b'], $this->storage->get('sequence-key'));
-
-		$this->storage->unshift('sequence-key', 'x', 'y');
-		$this->assertSame(['x', 'y', 'a', 'b'], $this->storage->get('sequence-key'));
-
-		$popped = $this->storage->pop('sequence-key', 2);
-		$this->assertSame(['a', 'b'], $popped);
-		$this->assertSame(['x', 'y'], $this->storage->get('sequence-key'));
-
-		$shifted = $this->storage->shift('sequence-key');
-		$this->assertSame(['x'], $shifted);
-		$this->assertSame(['y'], $this->storage->get('sequence-key'));
-	}
-
-	public function testEmptyArrayCleanup(): void
-	{
-		$this->storage->push('cleanup-key', 'item');
-		$this->assertSame(['item'], $this->storage->get('cleanup-key'));
-
-		$this->storage->pop('cleanup-key');
-		$this->assertNull($this->storage->get('cleanup-key'));
-
-		$this->storage->push('cleanup-key2', 'item');
-		$this->storage->shift('cleanup-key2');
-		$this->assertNull($this->storage->get('cleanup-key2'));
 	}
 
 	public function testStorageIsolation(): void
@@ -290,111 +135,215 @@ final class InMemoryKeyLockedStorageTest extends TestCase
 		$storage1 = new InMemoryKeyLockedStorage();
 		$storage2 = new InMemoryKeyLockedStorage();
 
-		$storage1->run('shared-key', fn() => 'value1');
-		$storage2->run('shared-key', fn() => 'value2');
+		$storage1->value('shared-key', fn() => 'value1', fn(LockedValue $value) => $value->get());
+		$storage2->value('shared-key', fn() => 'value2', fn(LockedValue $value) => $value->get());
 
-		$result1 = $storage1->run('shared-key', fn($value) => $value);
-		$result2 = $storage2->run('shared-key', fn($value) => $value);
+		$result1 = $storage1->value('shared-key', fn() => 'value1', fn(LockedValue $value) => $value->get());
+		$result2 = $storage2->value('shared-key', fn() => 'value2', fn(LockedValue $value) => $value->get());
 
 		$this->assertSame('value1', $result1);
 		$this->assertSame('value2', $result2);
 	}
 
-	public function testPopOrInitWithEmptyKey(): void
+	public function testListWithNewKey(): void
 	{
-		$result = $this->storage->popOrInit('empty-key', fn() => ['a', 'b', 'c']);
-
-		$this->assertSame(['c'], $result);
-		
-		$remaining = $this->storage->get('empty-key');
-		$this->assertSame(['a', 'b'], $remaining);
-	}
-
-	public function testPopOrInitWithExistingKey(): void
-	{
-		$this->storage->push('existing-key', 'x', 'y', 'z');
-		$result = $this->storage->popOrInit('existing-key', fn() => ['a', 'b', 'c']);
-
-		$this->assertSame(['z'], $result);
-		
-		$remaining = $this->storage->get('existing-key');
-		$this->assertSame(['x', 'y'], $remaining);
-	}
-
-	public function testPopOrInitMultipleElements(): void
-	{
-		$result = $this->storage->popOrInit('multi-key', fn() => ['a', 'b', 'c', 'd', 'e'], 3);
-
-		$this->assertSame(['c', 'd', 'e'], $result);
-		
-		$remaining = $this->storage->get('multi-key');
-		$this->assertSame(['a', 'b'], $remaining);
-	}
-
-	public function testShiftOrInitWithEmptyKey(): void
-	{
-		$result = $this->storage->shiftOrInit('empty-shift-key', fn() => ['a', 'b', 'c']);
-
-		$this->assertSame(['a'], $result);
-		
-		$remaining = $this->storage->get('empty-shift-key');
-		$this->assertSame(['b', 'c'], $remaining);
-	}
-
-	public function testShiftOrInitWithExistingKey(): void
-	{
-		$this->storage->push('existing-shift-key', 'x', 'y', 'z');
-		$result = $this->storage->shiftOrInit('existing-shift-key', fn() => ['a', 'b', 'c']);
-
-		$this->assertSame(['x'], $result);
-		
-		$remaining = $this->storage->get('existing-shift-key');
-		$this->assertSame(['y', 'z'], $remaining);
-	}
-
-	public function testShiftOrInitMultipleElements(): void
-	{
-		$result = $this->storage->shiftOrInit('multi-shift-key', fn() => ['a', 'b', 'c', 'd', 'e'], 3);
+		$result = $this->storage->list('list-key', fn() => ['a', 'b', 'c'], function(LockedList $list) {
+			$this->assertSame(['a', 'b', 'c'], $list->getValues());
+			return $list->getValues();
+		});
 
 		$this->assertSame(['a', 'b', 'c'], $result);
+	}
+
+	public function testListPushOperation(): void
+	{
+		$this->storage->list('list-key', fn() => ['a', 'b'], function(LockedList $list) {
+			$list->set(['a', 'b']);
+			return $list->getValues();
+		});
+
+		$result = $this->storage->list('list-key', fn() => [], function(LockedList $list) {
+			$this->assertSame(['a', 'b'], $list->getValues());
+			$list->push('c', 'd');
+			return $list->getValues();
+		});
+
+		$this->assertSame(['a', 'b', 'c', 'd'], $result);
 		
-		$remaining = $this->storage->get('multi-shift-key');
-		$this->assertSame(['d', 'e'], $remaining);
+		$stored = $this->storage->get('list-key');
+		$this->assertSame(['a', 'b', 'c', 'd'], $stored);
 	}
 
-	public function testPopOrInitEmptyInitializer(): void
+	public function testListPopOperation(): void
 	{
-		$result = $this->storage->popOrInit('empty-init-key', fn() => []);
+		$this->storage->list('list-key', fn() => ['a', 'b', 'c', 'd'], function(LockedList $list) {
+			$list->set(['a', 'b', 'c', 'd']);
+			return $list->getValues();
+		});
 
-		$this->assertSame([], $result);
-		$this->assertNull($this->storage->get('empty-init-key'));
+		$result = $this->storage->list('list-key', fn() => [], function(LockedList $list) {
+			$popped = $list->pop(2);
+			return $popped;
+		});
+
+		$this->assertSame(['c', 'd'], $result);
+		
+		$stored = $this->storage->get('list-key');
+		$this->assertSame(['a', 'b'], $stored);
 	}
 
-	public function testShiftOrInitEmptyInitializer(): void
+	public function testListUnshiftOperation(): void
 	{
-		$result = $this->storage->shiftOrInit('empty-shift-init-key', fn() => []);
+		$this->storage->list('list-key', fn() => ['c', 'd'], function(LockedList $list) {
+			$list->set(['c', 'd']);
+			return $list->getValues();
+		});
 
-		$this->assertSame([], $result);
-		$this->assertNull($this->storage->get('empty-shift-init-key'));
+		$result = $this->storage->list('list-key', fn() => [], function(LockedList $list) {
+			$list->unshift('a', 'b');
+			return $list->getValues();
+		});
+
+		$this->assertSame(['a', 'b', 'c', 'd'], $result);
+		
+		$stored = $this->storage->get('list-key');
+		$this->assertSame(['a', 'b', 'c', 'd'], $stored);
 	}
 
-	public function testPopOrInitKeyLengthValidation(): void
+	public function testListShiftOperation(): void
+	{
+		$this->storage->list('list-key', fn() => ['a', 'b', 'c', 'd'], function(LockedList $list) {
+			$list->set(['a', 'b', 'c', 'd']);
+			return $list->getValues();
+		});
+
+		$result = $this->storage->list('list-key', fn() => [], function(LockedList $list) {
+			$shifted = $list->shift(2);
+			return $shifted;
+		});
+
+		$this->assertSame(['a', 'b'], $result);
+		
+		$stored = $this->storage->get('list-key');
+		$this->assertSame(['c', 'd'], $stored);
+	}
+
+	public function testListRemoveOperation(): void
+	{
+		$this->storage->list('list-key', fn() => ['a', 'b', 'c'], function(LockedList $list) {
+			$list->set(['a', 'b', 'c']);
+			return $list->getValues();
+		});
+
+		$this->storage->list('list-key', fn() => [], function(LockedList $list) {
+			$list->remove();
+			return $list->getValues();
+		});
+		
+		$stored = $this->storage->get('list-key');
+		$this->assertNull($stored);
+	}
+
+	public function testListWithEmptyInitializer(): void
+	{
+		$result = $this->storage->list('empty-list-key', fn() => [], function(LockedList $list) {
+			$this->assertSame([], $list->getValues());
+			$list->push('first');
+			return $list->getValues();
+		});
+
+		$this->assertSame(['first'], $result);
+		
+		$stored = $this->storage->get('empty-list-key');
+		$this->assertSame(['first'], $stored);
+	}
+
+	public function testListKeyLengthValidation(): void
 	{
 		$longKey = str_repeat('a', 121);
 		
 		$this->expectException(LogicException::class);
 		$this->expectExceptionMessage('Key length 121 exceeds maximum length of 120 characters');
 
-		$this->storage->popOrInit($longKey, fn() => ['test']);
+		$this->storage->list($longKey, fn() => ['test'], function(LockedList $list) {
+			return $list->getValues();
+		});
 	}
 
-	public function testShiftOrInitKeyLengthValidation(): void
+	public function testValueRemoveOperation(): void
 	{
-		$longKey = str_repeat('a', 121);
-		
-		$this->expectException(LogicException::class);
-		$this->expectExceptionMessage('Key length 121 exceeds maximum length of 120 characters');
+		$this->storage->value('remove-key', fn() => ['data' => 'test'], function(LockedValue $value) {
+			$value->set(['data' => 'test']);
+			return $value->get();
+		});
 
-		$this->storage->shiftOrInit($longKey, fn() => ['test']);
+		$this->storage->value('remove-key', fn() => ['data' => 'test'], function(LockedValue $value) {
+			$this->assertSame(['data' => 'test'], $value->get());
+			$value->remove();
+			return null;
+		});
+		
+		$stored = $this->storage->get('remove-key');
+		$this->assertNull($stored);
+	}
+
+	public function testValueRollbackOperation(): void
+	{
+		// First establish original data in storage
+		$this->storage->value('rollback-key', fn() => ['initial' => 'data'], function(LockedValue $value) {
+			$value->set(['original' => 'data']);
+			return $value->get();
+		});
+
+		// Now test rollback behavior
+		$result = $this->storage->value('rollback-key', fn() => null, function(LockedValue $value) {
+			// Value should be loaded from storage
+			$this->assertSame(['original' => 'data'], $value->get());
+			
+			// Modify the value
+			$value->set(['modified' => 'data']);
+			$this->assertSame(['modified' => 'data'], $value->get());
+			
+			// Rollback to original state
+			$value->rollback();
+			$this->assertSame(['original' => 'data'], $value->get());
+			
+			return $value->get();
+		});
+		
+		$this->assertSame(['original' => 'data'], $result);
+		
+		// Verify rollback prevented changes from being saved - original data should still be there
+		$stored = $this->storage->get('rollback-key');
+		$this->assertSame(['original' => 'data'], $stored);
+	}
+
+	public function testListRollbackOperation(): void
+	{
+		$this->storage->list('rollback-list-key', fn() => ['a', 'b', 'c'], function(LockedList $list) {
+			$list->set(['a', 'b', 'c']);
+			return $list->getValues();
+		});
+
+		$result = $this->storage->list('rollback-list-key', fn() => ['a', 'b', 'c'], function(LockedList $list) {
+			$this->assertSame(['a', 'b', 'c'], $list->getValues());
+			
+			$list->push('d', 'e');
+			$this->assertSame(['a', 'b', 'c', 'd', 'e'], $list->getValues());
+			
+			$list->pop(1);
+			$this->assertSame(['a', 'b', 'c', 'd'], $list->getValues());
+			
+			$list->rollback();
+			$this->assertSame(['a', 'b', 'c'], $list->getValues());
+			
+			return $list->getValues();
+		});
+		
+		$this->assertSame(['a', 'b', 'c'], $result);
+		
+		// Verify rollback prevented changes from being saved
+		$stored = $this->storage->get('rollback-list-key');
+		$this->assertSame(['a', 'b', 'c'], $stored);
 	}
 }

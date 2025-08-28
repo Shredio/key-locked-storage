@@ -3,6 +3,8 @@
 namespace Shredio\KeyLockedStorage;
 
 use LogicException;
+use Shredio\KeyLockedStorage\Value\LockedList;
+use Shredio\KeyLockedStorage\Value\LockedValue;
 
 final class InMemoryKeyLockedStorage implements KeyLockedStorage
 {
@@ -12,11 +14,14 @@ final class InMemoryKeyLockedStorage implements KeyLockedStorage
 	 */
 	private array $storage = [];
 
-	public function run(string $key, callable $callback): mixed
+	public function value(string $key, callable $initializer, callable $processor): mixed
 	{
-		return $this->execute($key, static function (mixed $current) use ($callback): KeyLockedValue {
-			return KeyLockedValue::single($callback($current));
-		});
+		return $this->execute($key, LockedValue::class, $initializer, $processor);
+	}
+
+	public function list(string $key, callable $initializer, callable $processor): mixed
+	{
+		return $this->execute($key, LockedList::class, $initializer, $processor);
 	}
 
 	public function get(string $key): mixed
@@ -29,121 +34,35 @@ final class InMemoryKeyLockedStorage implements KeyLockedStorage
 	}
 
 	/**
-	 * @template TValue
-	 * @param callable(TValue|null $value): KeyLockedValue<TValue> $callback
-	 * @return TValue
+	 * @template TClass of LockedList|LockedValue
+	 * @template TRet
+	 * @param class-string<TClass> $valueClass
+	 * @param callable(TClass $value): TRet $processor
+	 * @return TRet
 	 */
-	private function execute(string $key, callable $callback): mixed
+	private function execute(string $key, string $valueClass, callable $initializer, callable $processor): mixed
 	{
 		if (strlen($key) > 120) {
 			throw new LogicException(sprintf('Key length %d exceeds maximum length of 120 characters', strlen($key)));
 		}
 
-		$currentValue = $this->storage[$key] ?? null;
-		$ret = $callback($currentValue);
-		
-		if ($ret->valueToSet === null) {
-			unset($this->storage[$key]);
-		} else {
-			$this->storage[$key] = $ret->valueToSet;
+		$raw = $this->storage[$key] ?? null;
+		$keyExists = $raw !== null;
+		$initialValue = $keyExists ? $raw : $initializer();
+
+		$return = $processor($value = $valueClass::createFromDatabase($initialValue)); // @phpstan-ignore argument.type
+		$snapshot = $value->snapshot();
+
+		if ($snapshot->changed) {
+			 if ($snapshot->remove) {
+				unset($this->storage[$key]);
+			} else {
+				$this->storage[$key] = $snapshot->value;
+			}
 		}
 
-		return $ret->valueToReturn;
+		return $return;
 	}
 
-	/**
-	 * @return list<mixed>
-	 */
-	private function ensureList(mixed $value): array
-	{
-		if (!is_array($value) || !isset($value[0])) {
-			return [];
-		}
-
-		/** @var list<mixed> */
-		return $value;
-	}
-
-	public function push(string $key, mixed ...$values): array
-	{
-		return $this->execute($key, function (mixed $current) use ($values): KeyLockedValue {
-			$array = $this->ensureList($current);
-			array_push($array, ...$values);
-
-			return KeyLockedValue::single($array);
-		});
-	}
-
-	public function pop(string $key, int $count = 1): array
-	{
-		return $this->execute($key, function (mixed $current) use ($count): KeyLockedValue {
-			$array = $this->ensureList($current);
-			$popped = array_splice($array, -$count);
-
-			return new KeyLockedValue(
-				valueToSet: $array === [] ? null : $array,
-				valueToReturn: $popped,
-			);
-		});
-	}
-
-	public function unshift(string $key, mixed ...$values): array
-	{
-		return $this->execute($key, function (mixed $current) use ($values): KeyLockedValue {
-			$array = $this->ensureList($current);
-			array_unshift($array, ...$values);
-
-			return KeyLockedValue::single($array);
-		});
-	}
-
-	public function shift(string $key, int $count = 1): array
-	{
-		return $this->execute($key, function (mixed $current) use ($count): KeyLockedValue {
-			$array = $this->ensureList($current);
-			$shifted = array_splice($array, 0, $count);
-
-			return new KeyLockedValue(
-				valueToSet: $array === [] ? null : $array,
-				valueToReturn: $shifted,
-			);
-		});
-	}
-
-	public function popOrInit(string $key, callable $initializer, int $count = 1): array
-	{
-		return $this->execute($key, function (mixed $current) use ($initializer, $count): KeyLockedValue {
-			$array = $this->ensureList($current);
-			
-			if ($array === []) {
-				$array = $initializer();
-			}
-			
-			$popped = array_splice($array, -$count);
-
-			return new KeyLockedValue(
-				valueToSet: $array === [] ? null : $array,
-				valueToReturn: $popped,
-			);
-		});
-	}
-
-	public function shiftOrInit(string $key, callable $initializer, int $count = 1): array
-	{
-		return $this->execute($key, function (mixed $current) use ($initializer, $count): KeyLockedValue {
-			$array = $this->ensureList($current);
-			
-			if ($array === []) {
-				$array = $initializer();
-			}
-			
-			$shifted = array_splice($array, 0, $count);
-
-			return new KeyLockedValue(
-				valueToSet: $array === [] ? null : $array,
-				valueToReturn: $shifted,
-			);
-		});
-	}
 
 }
