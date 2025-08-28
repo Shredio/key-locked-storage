@@ -2,10 +2,10 @@
 
 namespace Shredio\KeyLockedStorage;
 
+use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\TableNotFoundException;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
-use Doctrine\DBAL\Query\ForUpdate\ConflictResolutionMode;
 use Doctrine\DBAL\Schema\Name\Identifier;
 use Doctrine\DBAL\Schema\Name\UnqualifiedName;
 use Doctrine\DBAL\Schema\PrimaryKeyConstraint;
@@ -14,6 +14,7 @@ use Doctrine\DBAL\Types\Types;
 use LogicException;
 use Shredio\KeyLockedStorage\Value\LockedList;
 use Shredio\KeyLockedStorage\Value\LockedValue;
+use Symfony\Component\Clock\DatePoint;
 use Throwable;
 
 final class DoctrineKeyLockedStorage implements KeyLockedStorage
@@ -132,15 +133,20 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 			return;
 		}
 
+		$now = class_exists(DatePoint::class) ? new DatePoint() : new DateTimeImmutable();
+		
 		if ($exists) {
 			$qb->update($this->tableName)
 				->set('val', '?')
+				->set('updated_at', '?')
 				->where('id = ?')
 				->setParameters([
 					json_encode($value, JSON_THROW_ON_ERROR),
+					$now,
 					$key,
 				], [
 					Types::STRING,
+					Types::DATETIME_IMMUTABLE,
 					Types::STRING,
 				])
 				->executeStatement();
@@ -149,13 +155,16 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 				->values([
 					'id' => '?',
 					'val' => '?',
+					'updated_at' => '?',
 				])
 				->setParameters([
 					$key,
 					json_encode($value, JSON_THROW_ON_ERROR),
+					$now,
 				], [
 					Types::STRING,
 					Types::STRING,
+					Types::DATETIME_IMMUTABLE,
 				])
 				->executeStatement();
 		}
@@ -170,6 +179,8 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 			->setNotnull(true);
 		$table->addColumn('val', Types::JSON)
 			->setNotnull(false);
+		$table->addColumn('updated_at', Types::DATETIME_IMMUTABLE)
+			->setNotnull(true);
 
 		if (method_exists($table, 'addPrimaryKeyConstraint')) { // @phpstan-ignore function.alreadyNarrowedType
 			$table->addPrimaryKeyConstraint(
