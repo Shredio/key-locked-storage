@@ -1,0 +1,59 @@
+name: "Tests"
+
+on: [push, pull_request]
+
+jobs:
+  sqlite-tests:
+    name: SQLite Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ['8.3', '8.4']
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          coverage: none
+
+      - run: composer install --no-progress --prefer-dist
+      - run: composer run test:sqlite
+
+  mysql-tests:
+    name: MySQL Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php-version: ['8.3', '8.4']
+    
+    services:
+      mysql:
+        image: mysql:8.0.32
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          coverage: none
+
+      - run: composer install --no-progress --prefer-dist
+      
+      - name: Run MySQL tests
+        env:
+          DB_DRIVER: pdo_mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: test
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: composer run test:mysql
