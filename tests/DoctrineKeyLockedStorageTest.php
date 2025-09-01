@@ -289,6 +289,50 @@ final class DoctrineKeyLockedStorageTest extends TestCase
 		$this->assertNull($stored);
 	}
 
+	public function testGetWithDeleteFalse(): void
+	{
+		$this->storage->value('test-key', fn() => ['value' => 'test'], function(LockedValue $value) {
+			$value->set(['value' => 'persistent']);
+			return $value->get();
+		});
+
+		$result = $this->storage->get('test-key', false);
+		$this->assertSame(['value' => 'persistent'], $result);
+
+		$resultAgain = $this->storage->get('test-key', false);
+		$this->assertSame(['value' => 'persistent'], $resultAgain);
+	}
+
+	public function testGetWithDeleteTrue(): void
+	{
+		$this->storage->value('test-key', fn() => ['value' => 'test'], function(LockedValue $value) {
+			$value->set(['value' => 'to-be-deleted']);
+			return $value->get();
+		});
+
+		$result = $this->storage->get('test-key', true);
+		$this->assertSame(['value' => 'to-be-deleted'], $result);
+
+		$resultAfterDelete = $this->storage->get('test-key');
+		$this->assertNull($resultAfterDelete);
+	}
+
+	public function testGetWithDeleteTrueNonExistentKey(): void
+	{
+		$result = $this->storage->get('non-existent-key', true);
+		$this->assertNull($result);
+	}
+
+	public function testGetWithDeleteKeyLengthValidation(): void
+	{
+		$longKey = str_repeat('a', 121);
+		
+		$this->expectException(LogicException::class);
+		$this->expectExceptionMessage('Key length 121 exceeds maximum length of 120 characters');
+
+		$this->storage->get($longKey, true);
+	}
+
 	public function testValueRollbackOperation(): void
 	{
 		// First establish original data in storage

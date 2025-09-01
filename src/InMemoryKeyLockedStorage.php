@@ -24,13 +24,18 @@ final class InMemoryKeyLockedStorage implements KeyLockedStorage
 		return $this->execute($key, LockedList::class, $initializer, $processor);
 	}
 
-	public function get(string $key): mixed
+	public function get(string $key, bool $delete = false): mixed
 	{
 		if (strlen($key) > 120) {
 			throw new LogicException(sprintf('Key length %d exceeds maximum length of 120 characters', strlen($key)));
 		}
 
-		return $this->storage[$key] ?? null;
+		$value = $this->storage[$key] ?? null;
+		if ($delete) {
+			unset($this->storage[$key]);
+		}
+
+		return $value;
 	}
 
 	/**

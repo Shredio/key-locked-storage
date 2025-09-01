@@ -28,7 +28,9 @@ interface KeyLockedStorage
 
 	/**
 	 * Returns the value for the given key (without a lock)
+	 *
+	 * @param bool $delete Whether to delete the value after fetching it - if true deleted with lock
 	 */
-	public function get(string $key): mixed;
+	public function get(string $key, bool $delete = false): mixed;
 
 }

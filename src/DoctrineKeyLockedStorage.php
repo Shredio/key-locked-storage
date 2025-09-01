@@ -39,10 +39,18 @@ final class DoctrineKeyLockedStorage implements KeyLockedStorage
 		return $this->execute($key, LockedList::class, $initializer, $processor);
 	}
 
-	public function get(string $key): mixed
+	public function get(string $key, bool $delete = false): mixed
 	{
 		if (strlen($key) > 120) {
 			throw new LogicException(sprintf('Key length %d exceeds maximum length of 120 characters', strlen($key)));
+		}
+
+		if ($delete) {
+			return $this->execute($key, LockedValue::class, fn (): null => null, function (LockedValue $value): mixed {
+				$value->remove();
+
+				return $value->get();
+			});
 		}
 
 		try {
